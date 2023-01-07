@@ -45,4 +45,12 @@ ncclResult_t initTransportsRank_1(struct ncclComm* comm, struct allGather3Data_t
 ncclResult_t initTransportsRank_3(struct ncclComm* comm, struct allGather3Data_t *allGather3Data,
   struct ncclTopoGraph& treeGraph, struct ncclTopoGraph& ringGraph, struct ncclTopoGraph& collNetGraph);
 
+#define TIME_START(index)
+
+#define TIME_STOP(index)
+
+#define TIME_CANCEL(index)
+
+#define TIME_PRINT(name)
+
 #endif

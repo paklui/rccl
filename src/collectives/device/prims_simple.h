@@ -93,7 +93,10 @@ private:
   inline __device__ bool checkAbort(int &spins) {
     spins++;
     if (!(flags & Aborted) && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-      flags |= atomicAdd_system((unsigned int *)ncclShmem.comm.abortFlag, 0) ? Aborted : 0;
+      if (atomicAdd_system((unsigned int *)ncclShmem.comm.abortFlag, 0)) {
+        flags |= Aborted;
+        ncclShmem.aborted = 1;
+      }
       spins = 0;
     }
     return flags & Aborted;
@@ -207,6 +210,9 @@ private:
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
         subBarrier();
+        /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
+         * to 0 to avoid unnecessary workload. */
+        size_t workSize = ncclShmem.aborted ? 0 : sliceSize;
         if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
@@ -229,7 +235,7 @@ private:
               (tid, nworkers, nullptr, false,
                1, (T const**)ncclShmem.groups[group].srcs,
                fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
-               sliceSize);
+               workSize);
 
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
             if (tid == 0) {
@@ -266,7 +272,7 @@ private:
             (tid, nworkers, ncclShmem.redOpArgs, postOp,
              Recv, (T const**)ncclShmem.groups[group].srcs,
              Dst, (T**)ncclShmem.groups[group].dsts,
-             sliceSize);
+             workSize);
 
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
           if (tid == 0) {
@@ -303,7 +309,7 @@ private:
             (tid, nworkers, ncclShmem.redOpArgs, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
-             sliceSize);
+             workSize);
 
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
           if (tid == 0) {
@@ -342,6 +348,7 @@ private:
     // slices are all empty. Since empty slices are the uncommon case, and
     // worker perf is the limiter, perf-wise this loop is effectively unentered,
     // hence just a single branch insn.
+    #pragma unroll 1
     while (slice < SlicePerChunk) {
       sliceSize = sliceSize < nelem-offset ? sliceSize : nelem-offset;
       { // Only workers could have Wait roles so we know the slice must be empty
@@ -407,6 +414,7 @@ private:
     int sliceSize = stepSize*StepPerSlice;
     int dataSize = max(DIVUP(peerElem, 16*SlicePerChunk)*16, sliceSize/32);  // per-peer slice size
 
+    #pragma unroll 1
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
       if (tid < nworkers) {
@@ -418,6 +426,7 @@ private:
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
+          #pragma unroll 1
           // Loop over peers
           for (int j=0; j<fan.nsend(); j++) {
             int i = (j+shift)%fan.nsend();
@@ -443,6 +452,7 @@ private:
             // Since waitPeer sets srcs[0] to output buffer + offset, we are doing a direct-write based recv
             // Do nothing
           } else {
+            #pragma unroll 1
             for (int j=0; j<fan.nrecv(); j++) {
               int i = (j+shift)%fan.nrecv();
               peerOffset = i*peerElem;

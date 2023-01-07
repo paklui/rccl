@@ -189,7 +189,7 @@ const char* pncclGetErrorString(ncclResult_t result);
  */
 const char*  ncclGetLastError(ncclComm_t comm);
 /// @cond include_hidden
-const char* pncclGetError(ncclComm_t comm);
+const char* pncclGetLastError(ncclComm_t comm);
 /// @endcond
 
 /* Checks whether the comm has encountered any asynchronous errors */
