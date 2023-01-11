@@ -547,7 +547,7 @@ Source: https://github.com/ROCmSoftwarePlatform/rccl
 
 Files: *
 Copyright: (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
-Modifications Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+Modifications Copyright (c) 2020-2023 Advanced Micro Devices, Inc. All rights reserved.
 License: See LICENSE.txt for license information\n")
   install(FILES "${CMAKE_BINARY_DIR}/copyright" DESTINATION ${CMAKE_INSTALL_DATADIR}/rccl)
   # Write changelog file
